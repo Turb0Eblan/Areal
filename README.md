@@ -1,6 +1,6 @@
-# Areal — Rise Hills Building Layout
+# Areal by BI
 
-Прошивки для системы управления подъёмными механизмами и подсветкой архитектурного макета здания **Rise Hills**. Построена на ESP32 (uPesy WROOM), PlatformIO и Arduino framework.
+Прошивки для системы управления подъёмными механизмами и подсветкой архитектурного макета здания **Areal by BI**. Построена на ESP32 (uPesy WROOM), PlatformIO и Arduino framework.
 
 ## Архитектура
 
@@ -37,7 +37,7 @@
 
 ## Сборка и прошивка
 
-Нужен [PlatformIO](https://platformio.org/) (CLI или расширение VS Code). Удобнее всего открыть `Rise Hills Building Layout Slave.code-workspace` — в нём собраны все проекты.
+Нужен [PlatformIO](https://platformio.org/) (CLI или расширение VS Code). Удобнее всего открыть `Areal by BI.code-workspace` — в нём собраны все проекты.
 
 ```bash
 cd "Areal motor 4 Slave"
