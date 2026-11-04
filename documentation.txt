@@ -1,30 +1,30 @@
 =====================================================
-       ДОКУМЕНТАЦИЯ ПРОЕКТА AREAL
+       AREAL PROJECT DOCUMENTATION
        Areal by BI
 =====================================================
 
---- ОБЩЕЕ ОПИСАНИЕ ---
+--- OVERVIEW ---
 
-Система управления подъёмными механизмами макета здания.
-Архитектура: один Master + несколько Slave-устройств.
-Связь между устройствами: ESP-NOW (WiFi канал 1, беспроводная).
-Также поддерживается Bluetooth для ручного управления.
+Control system for the lifting mechanisms of a building layout model.
+Architecture: one Master + several Slave devices.
+Device-to-device link: ESP-NOW (WiFi channel 1, wireless).
+Bluetooth is also supported for manual control.
 
-Каждый Slave хранит свои настройки в энергонезависимой памяти (NVS) —
-параметры сохраняются при отключении питания.
+Each Slave stores its settings in non-volatile memory (NVS) —
+parameters survive a power cycle.
 
 =====================================================
 
---- УСТРОЙСТВА И MAC-АДРЕСА ---
+--- DEVICES AND MAC ADDRESSES ---
 
-Моторные Slave:
-  m1-1   FC:E8:C0:DF:33:50    (мотор 1, первый)
-  m1-2   F8:B3:B7:74:A9:B8    (мотор 1, второй)
-  m2-1   FC:E8:C0:E1:5D:64    (мотор 2, левый)   <-- АКТИВЕН
-  m2-2   FC:E8:C0:DF:39:F0    (мотор 2, правый)  <-- АКТИВЕН
-  m4     FC:E8:C0:DF:3F:B4    (центральный)       <-- АКТИВЕН
+Motor Slaves:
+  m1-1   FC:E8:C0:DF:33:50    (motor 1, first)
+  m1-2   F8:B3:B7:74:A9:B8    (motor 1, second)
+  m2-1   FC:E8:C0:E1:5D:64    (motor 2, left)    <-- ACTIVE
+  m2-2   FC:E8:C0:DF:39:F0    (motor 2, right)   <-- ACTIVE
+  m4     FC:E8:C0:DF:3F:B4    (center)           <-- ACTIVE
 
-LED Slave:
+LED Slaves:
   blue   78:1C:3C:A2:8C:FC
   red    68:25:DD:2E:DF:34
   yellow 68:25:DD:2E:BB:84
@@ -32,289 +32,289 @@ LED Slave:
 
 =====================================================
 
---- MASTER КОНТРОЛЛЕР ---
+--- MASTER CONTROLLER ---
 
-Файл: Areal Msater/src/Master.cpp
+File: Areal Msater/src/Master.cpp
 
-Главный контроллер системы. Принимает команды и
-перенаправляет их нужным Slave-устройствам по ESP-NOW.
+Main controller of the system. Receives commands and
+forwards them to the right Slave devices over ESP-NOW.
 
-Интерфейсы ввода команд:
+Command input interfaces:
   - USB Serial (115200 baud)
   - Bluetooth: "Areal_Master"
 
-Отправка команд:
-  - 3 попытки на каждую команду, с паузой 50 мс между попытками
-  - Ожидание подтверждения (ACK) от Slave
+Command sending:
+  - 3 attempts per command, 50 ms pause between attempts
+  - Waits for an acknowledgement (ACK) from the Slave
 
-Формат команд для моторов:
-  <цель> <действие>
-  Примеры: m2-1 up, m2-2 down, motors up
+Motor command format:
+  <target> <action>
+  Examples: m2-1 up, m2-2 down, motors up
 
-  Действия:
-    up        подъём
-    down      опускание
-    stop      остановка
-    mode:sim  режим одновременного движения
-    mode:seq  режим последовательного движения
+  Actions:
+    up        raise
+    down      lower
+    stop      stop
+    mode:sim  simultaneous movement mode
+    mode:seq  sequential movement mode
 
-Группы моторов:
-  motors      все моторные Slave разом
+Motor groups:
+  motors      all motor Slaves at once
 
-Формат команд для LED (зарезервировано, НЕ РАБОТАЕТ):
-  <устройство> <эффект>
-  Примеры: blue on, red off, all fill white
-
-=====================================================
-
---- SLAVE: МОТОР 2 (m2-1) — ЛЕВЫЙ МЕХАНИЗМ ---
-
-Файл: Areal motor 2 Slave/src/2-1 motor.cpp
-Пространство NVS: "slave2"
-
-Управляет двумя шаговыми моторами синхронно.
-Оба мотора движутся вместе, как единый механизм.
-
-Железо:
-  Мотор 1: шаг=GPIO4, направление=GPIO2
-            драйвер TMC2209, UART: RX=16, TX=17
-  Мотор 2: шаг=GPIO18, направление=GPIO5
-            драйвер TMC2209, UART: RX=12, TX=13
-  Концевик (общий): GPIO15 (INPUT_PULLUP, NC — HIGH при срабатывании)
-  Датчик угла AS5600: I2C (SDA=21, SCL=22)
-
-Параметры движения по умолчанию:
-  Шагов на движение: 50 000
-  Макс. скорость:    3 000 шаг/с
-  Ускорение:         800 шаг/с²
-  Диапазон TRIM:     ±50 000 шагов на каждый мотор
-
-Состояния (State Machine):
-  STATE_INIT        инициализация и автонаведение (хоминг)
-  STATE_IDLE        ожидание команды
-  STATE_GOING_DOWN  опускание (оба мотора, до концевика)
-  STATE_GOING_UP    подъём (оба мотора, по количеству шагов)
-  STATE_ADJ         независимая подстройка одного мотора
-
-Хоминг (автоматический при старте):
-  1. Если концевик уже нажат — оба мотора отъезжают вверх на 2 000 шагов
-  2. Оба мотора одновременно движутся вниз
-  3. При срабатывании концевика — остановка, позиция = 0
-
-TRIM-система (подстройка синхронизации):
-  Если моторы встали не на одном уровне — TRIM добавляет
-  постоянный офсет к количеству шагов конкретного мотора.
-  Сохраняется в NVS, не сбрасывается при перезагрузке.
-
-Команды (Serial / Bluetooth):
-  0              аварийная остановка
-  1              опустить (DOWN)
-  2              поднять (UP)
-  HOME           запустить хоминг вручную
-  M1:<N>         установить шаги для мотора 1
-  M2:<N>         установить шаги для мотора 2
-  TRIM1:<N>      постоянный офсет мотора 1 (сохраняется)
-  TRIM2:<N>      постоянный офсет мотора 2 (сохраняется)
-  ADJ1:<N>       временный офсет мотора 1 (не сохраняется)
-  ADJ2:<N>       временный офсет мотора 2 (не сохраняется)
-  SPD:<N>        установить макс. скорость (100–10 000)
-  ACC:<N>        установить ускорение (50–5 000)
-  UART           проверить связь с TMC2209 по UART
-  POS            показать текущие позиции обоих моторов
-  RESET          сброс настроек к заводским
-
-Хранится в NVS: moveStepsM1, moveStepsM2, trimM1, trimM2, maxSpeed, acceleration
+LED command format (reserved, NOT WORKING):
+  <device> <effect>
+  Examples: blue on, red off, all fill white
 
 =====================================================
 
---- SLAVE: МОТОР 2 (m2-2) — ПРАВЫЙ МЕХАНИЗМ ---
+--- SLAVE: MOTOR 2 (m2-1) — LEFT MECHANISM ---
 
-Файл: Areal motor 2 Slave copy/src/2-1 motor.cpp
+File: Areal motor 2 Slave/src/2-1 motor.cpp
+NVS namespace: "slave2"
 
-Копия прошивки m2-1. Идентична по логике и командам,
-управляет правым механизмом. MAC: FC:E8:C0:DF:39:F0.
+Drives two stepper motors in sync.
+Both motors move together as a single mechanism.
 
-Все параметры, железо и команды — аналогичны m2-1
-(см. раздел выше).
+Hardware:
+  Motor 1: step=GPIO4, direction=GPIO2
+           TMC2209 driver, UART: RX=16, TX=17
+  Motor 2: step=GPIO18, direction=GPIO5
+           TMC2209 driver, UART: RX=12, TX=13
+  Limit switch (shared): GPIO15 (INPUT_PULLUP, NC — HIGH when triggered)
+  AS5600 angle sensor: I2C (SDA=21, SCL=22)
+
+Default motion parameters:
+  Steps per move:  50,000
+  Max speed:       3,000 steps/s
+  Acceleration:    800 steps/s²
+  TRIM range:      ±50,000 steps per motor
+
+States (state machine):
+  STATE_INIT        initialization and auto-homing
+  STATE_IDLE        waiting for a command
+  STATE_GOING_DOWN  lowering (both motors, down to the limit switch)
+  STATE_GOING_UP    raising (both motors, by step count)
+  STATE_ADJ         independent adjustment of a single motor
+
+Homing (automatic on startup):
+  1. If the limit switch is already pressed — both motors back off up by 2,000 steps
+  2. Both motors move down simultaneously
+  3. When the limit switch triggers — stop, position = 0
+
+TRIM system (sync adjustment):
+  If the motors stop at different heights, TRIM adds a
+  permanent offset to the step count of a specific motor.
+  Stored in NVS, not reset on reboot.
+
+Commands (Serial / Bluetooth):
+  0              emergency stop
+  1              lower (DOWN)
+  2              raise (UP)
+  HOME           run homing manually
+  M1:<N>         set steps for motor 1
+  M2:<N>         set steps for motor 2
+  TRIM1:<N>      permanent offset for motor 1 (saved)
+  TRIM2:<N>      permanent offset for motor 2 (saved)
+  ADJ1:<N>       temporary offset for motor 1 (not saved)
+  ADJ2:<N>       temporary offset for motor 2 (not saved)
+  SPD:<N>        set max speed (100–10,000)
+  ACC:<N>        set acceleration (50–5,000)
+  UART           check UART link with the TMC2209
+  POS            show current positions of both motors
+  RESET          reset to factory settings
+
+Stored in NVS: moveStepsM1, moveStepsM2, trimM1, trimM2, maxSpeed, acceleration
 
 =====================================================
 
---- SLAVE: МОТОР 4 (m4) — ЦЕНТРАЛЬНЫЙ МЕХАНИЗМ ---
+--- SLAVE: MOTOR 2 (m2-2) — RIGHT MECHANISM ---
 
-Файл: Areal motor 4 Slave/src/4 motor.cpp
-Пространство NVS: "slave5"
+File: Areal motor 2 Slave copy/src/2-2 motor.cpp
 
-Управляет 5 шаговыми моторами вертикального стека.
-Самый сложный контроллер в системе.
+Copy of the m2-1 firmware. Same logic and commands;
+drives the right mechanism. MAC: FC:E8:C0:DF:39:F0.
 
-Моторы (снизу вверх):
-  M5 (низ):  шаг=GPIO13, направление=GPIO12 | TB6600 | концевик=GPIO23
-  M4:        шаг=GPIO14, направление=GPIO27 | TB6600 | концевик=GPIO22
-  M3:        шаг=GPIO26, направление=GPIO25 | TB6600 | концевик=GPIO32
-  M2:        шаг=GPIO21, направление=GPIO15 | TMC2209 UART (RX=16, TX=17) | концевик=GPIO33
-  M1 (верх): шаг=GPIO2,  направление=GPIO4  | TMC2209 UART (RX=18, TX=19) | концевик=GPIO5
+All parameters, hardware and commands match m2-1
+(see the section above).
 
-Параметры по умолчанию:
-  Шагов на движение: 50 000
-  Макс. скорость:    8 000 шаг/с
-  Ускорение:         600 шаг/с²
-  Ток TMC2209:       800 мА, 16 микрошагов
+=====================================================
 
-Режимы работы:
-  SIM (Simultaneous, по умолчанию):
-    Все 5 моторов движутся одновременно, параллельно.
+--- SLAVE: MOTOR 4 (m4) — CENTER MECHANISM ---
+
+File: Areal motor 4 Slave/src/4 motor.cpp
+NVS namespace: "slave5"
+
+Drives 5 stepper motors in a vertical stack.
+The most complex controller in the system.
+
+Motors (bottom to top):
+  M5 (bottom): step=GPIO13, direction=GPIO12 | TB6600 | limit=GPIO23
+  M4:          step=GPIO14, direction=GPIO27 | TB6600 | limit=GPIO22
+  M3:          step=GPIO26, direction=GPIO25 | TB6600 | limit=GPIO32
+  M2:          step=GPIO21, direction=GPIO15 | TMC2209 UART (RX=16, TX=17) | limit=GPIO33
+  M1 (top):    step=GPIO2,  direction=GPIO4  | TMC2209 UART (RX=18, TX=19) | limit=GPIO5
+
+Defaults:
+  Steps per move:  50,000
+  Max speed:       8,000 steps/s
+  Acceleration:    600 steps/s²
+  TMC2209 current: 800 mA, 16 microsteps
+
+Operating modes:
+  SIM (Simultaneous, default):
+    All 5 motors move at the same time, in parallel.
 
   SEQ (Sequential):
-    DOWN: M5 → M4 → M3 → M2 → M1 (по одному, сверху→вниз)
-    UP:   M1 → M2 → M3 → M4       (M5 не участвует в подъёме)
+    DOWN: M5 → M4 → M3 → M2 → M1 (one at a time)
+    UP:   M1 → M2 → M3 → M4      (M5 does not take part in raising)
 
-Хоминг (по одному мотору, снизу вверх):
-  1. M5 движется вниз до концевика → позиция = 0
-  2. M4 то же самое
-  3. M3 то же самое
-  4. M2 то же самое
-  5. M1 то же самое
+Homing (one motor at a time, bottom to top):
+  1. M5 moves down to the limit switch → position = 0
+  2. M4 does the same
+  3. M3 does the same
+  4. M2 does the same
+  5. M1 does the same
 
-Защита:
-  Нельзя опустить M2 и выше, если M1 ещё не поднят.
-  Концевики проверяются перед каждым движением вниз.
+Safety:
+  M2 and above cannot be lowered while M1 is not yet raised.
+  Limit switches are checked before every downward move.
 
-Индивидуальное управление моторами:
-  M<N>:UP            поднять один мотор N (1–5)
-  M<N>:DOWN          опустить один мотор N (1–5)
-  M<N>:ADJ:<шаги>    временный офсет (+ вверх, − вниз)
-  M<N>:S:<шаги>      установить шаги для мотора N
-  M<N>:T:<trim>      постоянный TRIM для мотора N
+Individual motor control:
+  M<N>:UP            raise a single motor N (1–5)
+  M<N>:DOWN          lower a single motor N (1–5)
+  M<N>:ADJ:<steps>   temporary offset (+ up, − down)
+  M<N>:S:<steps>     set steps for motor N
+  M<N>:T:<trim>      permanent TRIM for motor N
 
-Основные команды (Serial / Bluetooth):
-  0              аварийная остановка
-  1              опустить все (DOWN)
-  2              поднять все (UP)
-  HOME           автоматический хоминг
-  TEST           тест каждого мотора (400 шагов туда-обратно)
-  MODE:SIM       переключить в режим SIM
-  MODE:SEQ       переключить в режим SEQ
-  SPD:<N>        макс. скорость для всех (глобально)
-  ACC:<N>        ускорение для всех (глобально)
-  CURR:<мА>      ток TMC2209 (100–2 000 мА)
-  MSTEP:<N>      микрошаги TMC2209 (1/2/4/8/16/32/64/128/256)
-  TMCSTAT        статус TMC2209 драйверов
-  POS            позиции всех 5 моторов
-  LIM            состояние всех 5 концевиков
-  RESET          сброс к заводским
+Main commands (Serial / Bluetooth):
+  0              emergency stop
+  1              lower all (DOWN)
+  2              raise all (UP)
+  HOME           automatic homing
+  TEST           test each motor (400 steps back and forth)
+  MODE:SIM       switch to SIM mode
+  MODE:SEQ       switch to SEQ mode
+  SPD:<N>        max speed for all (global)
+  ACC:<N>        acceleration for all (global)
+  CURR:<mA>      TMC2209 current (100–2,000 mA)
+  MSTEP:<N>      TMC2209 microsteps (1/2/4/8/16/32/64/128/256)
+  TMCSTAT        TMC2209 driver status
+  POS            positions of all 5 motors
+  LIM            state of all 5 limit switches
+  RESET          reset to factory settings
 
-Хранится в NVS: stp0–stp4 (шаги), trm0–trm4 (trim),
-                spd, acc, tmc_ma, tmc_ms, seqmode
-
-=====================================================
-
---- SLAVE: МОТОР 1 (m1-1, m1-2) — РЕЗЕРВНЫЕ ---
-
-Файл: Areal motor 1 Slave/src/1 motor.cpp
-
-Одиночный шаговый мотор с хомингом.
-На данный момент m1-1 и m1-2 не используются активно.
-
-Железо:
-  Шаг=GPIO4, направление=GPIO2
-  Драйвер TMC2209, UART: RX=16, TX=17 (1 кОм на TX)
-  Концевик: GPIO15 (INPUT_PULLUP, NC — HIGH при срабатывании)
-  Датчик AS5600: I2C (SDA=21, SCL=22)
-  Ток: 800 мА, 16 микрошагов
-
-Параметры по умолчанию:
-  Шагов: 50 000
-  Макс. скорость: 3 000 шаг/с
-  Ускорение: 800 шаг/с²
-
-Состояния:
-  STATE_INIT         хоминг при старте
-  STATE_IDLE         ожидание
-  STATE_GOING_DOWN   движение вниз (до концевика)
-  STATE_GOING_UP     движение вверх (по шагам)
-  STATE_ERROR        ошибка (концевик не найден)
-
-Команды:
-  0              стоп
-  1              вниз (DOWN)
-  2              вверх (UP)
-  HOME           запуск хоминга
-  STEPS:<N>      установить шаги (100–500 000)
-  SPD:<N>        скорость (100–10 000)
-  ACC:<N>        ускорение (50–5 000)
-  ANG            прочитать угол AS5600 (0–4 095)
-  RESET          сброс
-
-Хранится в NVS: moveSteps, maxSpeed, acceleration
+Stored in NVS: stp0–stp4 (steps), trm0–trm4 (trim),
+               spd, acc, tmc_ma, tmc_ms, seqmode
 
 =====================================================
 
---- SLAVE: LED (НЕ РАБОТАЕТ) ---
+--- SLAVE: MOTOR 1 (m1-1, m1-2) — SPARE ---
 
-Файл: Areal slave/src/Lights.cpp
+File: Areal motor 1 Slave/src/1 motor.cpp
 
-! ВНИМАНИЕ: Управление LED на данный момент НЕ РАБОТАЕТ.
-  Прошивка написана и прошита, но интеграция с Master
-  и активное управление с пульта не реализованы.
+Single stepper motor with homing.
+m1-1 and m1-2 are currently not in active use.
 
-Железо:
-  NeoPixel лента: 3 700 пикселей, GPIO5
-  Формат цвета: GRBW (800 кГц)
-  Яркость по умолчанию: 200 (из 255)
-  ID устройства: "red" / "blue" / "yellow" / "orange"
+Hardware:
+  Step=GPIO4, direction=GPIO2
+  TMC2209 driver, UART: RX=16, TX=17 (1 kOhm on TX)
+  Limit switch: GPIO15 (INPUT_PULLUP, NC — HIGH when triggered)
+  AS5600 sensor: I2C (SDA=21, SCL=22)
+  Current: 800 mA, 16 microsteps
 
-Поддерживаемые цвета:
+Defaults:
+  Steps: 50,000
+  Max speed: 3,000 steps/s
+  Acceleration: 800 steps/s²
+
+States:
+  STATE_INIT         homing on startup
+  STATE_IDLE         waiting
+  STATE_GOING_DOWN   moving down (to the limit switch)
+  STATE_GOING_UP     moving up (by steps)
+  STATE_ERROR        error (limit switch not found)
+
+Commands:
+  0              stop
+  1              down (DOWN)
+  2              up (UP)
+  HOME           run homing
+  STEPS:<N>      set steps (100–500,000)
+  SPD:<N>        speed (100–10,000)
+  ACC:<N>        acceleration (50–5,000)
+  ANG            read AS5600 angle (0–4,095)
+  RESET          reset
+
+Stored in NVS: moveSteps, maxSpeed, acceleration
+
+=====================================================
+
+--- SLAVE: LED (NOT WORKING) ---
+
+File: Areal slave/src/Lights.cpp
+
+! NOTE: LED control is currently NOT WORKING.
+  The firmware is written and flashed, but integration with the Master
+  and active control from the console are not implemented.
+
+Hardware:
+  NeoPixel strip: 3,700 pixels, GPIO5
+  Color format: GRBW (800 kHz)
+  Default brightness: 200 (out of 255)
+  Device ID: "red" / "blue" / "yellow" / "orange"
+
+Supported colors:
   white, red, green, blue, yellow, cyan, magenta,
   orange, purple, warm, off
-  Или формат R,G,B,W через запятую
+  Or R,G,B,W comma-separated
 
-Эффекты (реализованы, но не активированы):
-  fill <цвет>          залить всю ленту
-  blink <цвет> <мс> <N>   мигание N раз
-  breath <цвет> <шаги> <мс>  плавное дыхание
-  wipe <цвет> <мс>     заливка волной
-  chase <цвет> <хвост> <мс>  бегущий огонь
-  sparkle <цвет> <N> <мс> <повторов>  искры
-  strobe <цвет> <мс> <N>  стробоскоп
-  random               режим имитации окон здания
+Effects (implemented but not enabled):
+  fill <color>                        fill the whole strip
+  blink <color> <ms> <N>              blink N times
+  breath <color> <steps> <ms>         smooth breathing
+  wipe <color> <ms>                   wave fill
+  chase <color> <tail> <ms>           running light
+  sparkle <color> <N> <ms> <repeats>  sparkles
+  strobe <color> <ms> <N>             strobe
+  random                              building window simulation mode
 
-Режим имитации окон здания (random):
-  Имитирует случайное включение/выключение окон.
-  Виртуальные окна: до 200 штук, распределены по ленте.
-  Цикл день/ночь: 10 минут.
-  Плавные переходы: нарастание и затухание без delay().
+Building window simulation mode (random):
+  Simulates windows randomly switching on and off.
+  Virtual windows: up to 200, spread along the strip.
+  Day/night cycle: 10 minutes.
+  Smooth transitions: fade in and fade out without delay().
 
-Дополнительные команды LED Slave:
-  range <s> <e> [цвет]      залить диапазон пикселей
-  pixel <idx> <цвет>        установить один пиксель
-  brightness <0-255>        яркость
-  status                    MAC, кол-во пикселей, текущий эффект
-
-=====================================================
-
---- ИТОГОВАЯ ТАБЛИЦА ---
-
-  Устройство  MAC                  Статус    Моторов  Описание
-  ----------  -------------------  --------  -------  -------------------------
-  Master      -                    Работает  0        Командный центр
-  m2-1        FC:E8:C0:E1:5D:64   Работает  2        Левый механизм
-  m2-2        FC:E8:C0:DF:39:F0   Работает  2        Правый механизм
-  m4          FC:E8:C0:DF:3F:B4   Работает  5        Центральный (вертикальный стек)
-  m1-1        FC:E8:C0:DF:33:50   Резерв    1        Одиночный мотор
-  m1-2        F8:B3:B7:74:A9:B8   Резерв    1        Одиночный мотор
-  LED blue    78:1C:3C:A2:8C:FC   НЕ РАБОТАЕТ  0    3700-пиксельная лента
-  LED red     68:25:DD:2E:DF:34   НЕ РАБОТАЕТ  0    3700-пиксельная лента
-  LED yellow  68:25:DD:2E:BB:84   НЕ РАБОТАЕТ  0    3700-пиксельная лента
-  LED orange  68:25:DD:2E:E4:08   НЕ РАБОТАЕТ  0    3700-пиксельная лента
+Additional LED Slave commands:
+  range <s> <e> [color]     fill a pixel range
+  pixel <idx> <color>       set a single pixel
+  brightness <0-255>        brightness
+  status                    MAC, pixel count, current effect
 
 =====================================================
 
---- ПРОТОКОЛ СВЯЗИ ESP-NOW ---
+--- SUMMARY TABLE ---
 
-  Канал: WiFi канал 1
-  Формат команды: <устройство>:<команда>
-  Пример: "m2-1:2" (поднять левый механизм)
-  Попытки: 3, пауза между попытками: 50 мс
-  Подтверждение: ACK от каждого Slave
+  Device      MAC                  Status       Motors  Description
+  ----------  -------------------  -----------  ------  -------------------------
+  Master      -                    Working      0       Command hub
+  m2-1        FC:E8:C0:E1:5D:64    Working      2       Left mechanism
+  m2-2        FC:E8:C0:DF:39:F0    Working      2       Right mechanism
+  m4          FC:E8:C0:DF:3F:B4    Working      5       Center (vertical stack)
+  m1-1        FC:E8:C0:DF:33:50    Spare        1       Single motor
+  m1-2        F8:B3:B7:74:A9:B8    Spare        1       Single motor
+  LED blue    78:1C:3C:A2:8C:FC    NOT WORKING  0       3,700-pixel strip
+  LED red     68:25:DD:2E:DF:34    NOT WORKING  0       3,700-pixel strip
+  LED yellow  68:25:DD:2E:BB:84    NOT WORKING  0       3,700-pixel strip
+  LED orange  68:25:DD:2E:E4:08    NOT WORKING  0       3,700-pixel strip
+
+=====================================================
+
+--- ESP-NOW PROTOCOL ---
+
+  Channel: WiFi channel 1
+  Command format: <device>:<command>
+  Example: "m2-1:2" (raise the left mechanism)
+  Attempts: 3, pause between attempts: 50 ms
+  Acknowledgement: ACK from each Slave
 
 =====================================================

@@ -2,10 +2,10 @@
  * ============================================================
  *  LED Strip Slave Controller  —  ESP32
  *  Device ID: green
- *  SK6812 RGBW — 16 блоков по 100 LED (1600 total)
- *  Библиотека: NeoPixelBus (поддерживает RGBW нативно)
+ *  SK6812 RGBW — 16 blocks of 100 LEDs (1600 total)
+ *  Library: NeoPixelBus (native RGBW support)
  *
- *  Маппинг блок → пин:
+ *  Block → pin mapping:
  *    Block 1  → Pin 32    Block 9  → Pin 16
  *    Block 2  → Pin 13    Block 10 → Pin 23
  *    Block 3  → Pin 26    Block 11 → Pin 17
@@ -15,16 +15,16 @@
  *    Block 7  → Pin  4    Block 15 → Pin 18
  *    Block 8  → Pin 27    Block 16 → Pin 19
  *
- *  Команды:
- *    block <1-16> <mode>             — режим для блока
- *    block all <mode>                — режим для всех
- *    block <1-16> color (R,G,B,W)   — цвет блока
- *    block <1-16> (R,G,B,W)         — сокращённо
- *    <mode>                          — все блоки (совместимость)
+ *  Commands:
+ *    block <1-16> <mode>             — mode for a block
+ *    block all <mode>                — mode for all blocks
+ *    block <1-16> color (R,G,B,W)   — block color
+ *    block <1-16> (R,G,B,W)         — shorthand
+ *    <mode>                          — all blocks (compatibility)
  *
- *  Режимы: off | allOn | fade | snake | rain | random |
+ *  Modes: off | allOn | fade | snake | rain | random |
  *          rainbow | fire | pulse | auto
- *  Цвет:   (255,0,0,0)=красный  (0,0,0,255)=белый
+ *  Color:   (255,0,0,0)=red  (0,0,0,255)=white
  *
  *  platformio.ini:
  *    lib_deps = makuna/NeoPixelBus @ ^2.7.9
@@ -46,7 +46,7 @@ const uint8_t BLOCK_PINS[NUM_BLOCKS] = {
   32, 13, 26, 33, 25, 14, 4, 27, 16, 23, 17, 22, 5, 21, 18, 19
 };
 
-// ESP32 имеет 8 RMT-каналов — блоки 1-8 через RMT, 9-16 через BitBang
+// ESP32 has 8 RMT channels — blocks 1-8 via RMT, 9-16 via BitBang
 NeoPixelBus<NeoGrbwFeature, NeoEsp32Rmt0800KbpsMethod> strip0(LEDS_PER_BLOCK, 32);
 NeoPixelBus<NeoGrbwFeature, NeoEsp32Rmt1800KbpsMethod> strip1(LEDS_PER_BLOCK, 13);
 NeoPixelBus<NeoGrbwFeature, NeoEsp32Rmt2800KbpsMethod> strip2(LEDS_PER_BLOCK, 26);
@@ -184,7 +184,7 @@ struct BlockState {
   uint8_t   colorFadeCount = 0;
   uint8_t   colorFadeIdx   = 0;
   float     colorFadeBlend = 0.0f;
-  float     colorFadeSpeed = 0.01f;   // ~3 сек на переход
+  float     colorFadeSpeed = 0.01f;   // ~3 s per transition
 };
 
 BlockState blocks[NUM_BLOCKS];
@@ -201,7 +201,7 @@ const Mode AUTO_CYCLE_ORDER[] = {
 const int AUTO_CYCLE_COUNT = 8;
 unsigned long lastUpdate = 0;
 
-// ─── Палитра по умолчанию для cfade ───────────────────────────
+// ─── Default cfade palette ───────────────────────────
 const RgbwColor DEFAULT_CFADE_PALETTE[5] = {
   RgbwColor( 38,  54,  80, 0),  // Midnight Horizon
   RgbwColor(135, 173, 214, 0),  // Morning Mist
@@ -368,12 +368,12 @@ void handleBlockCommand(int b, String cmd) {
     String cs=cmd.substring(cmd.indexOf(' ')+1);
     uint8_t r,g,bl,w;
     if (parseColorRGBW(cs,r,g,bl,w)) { blocks[b].solidR=r; blocks[b].solidG=g; blocks[b].solidB=bl; blocks[b].solidW=w; initializeMode(b, MODE_SOLID_COLOR); }
-    else Serial.println("[WARN] Формат: (R,G,B,W) например (0,0,0,255)");
+    else Serial.println("[WARN] Format: (R,G,B,W), e.g. (0,0,0,255)");
   }
   else if (cmd.startsWith("cfade")) {
-    // cfade               — дефолтные 5 цветов
-    // cfade (R,G,B,W),... — до 8 своих цветов
-    setDefaultCFadePalette(b);  // начальный сброс
+    // cfade               — default 5 colors
+    // cfade (R,G,B,W),... — up to 8 custom colors
+    setDefaultCFadePalette(b);  // initial reset
     String rest = cmd.substring(5); rest.trim();
     if (rest.length() > 0) {
       uint8_t cnt = 0;
@@ -395,22 +395,22 @@ void handleBlockCommand(int b, String cmd) {
   else if (cmd.startsWith("(")) {
     uint8_t r,g,bl,w;
     if (parseColorRGBW(cmd,r,g,bl,w)) { blocks[b].solidR=r; blocks[b].solidG=g; blocks[b].solidB=bl; blocks[b].solidW=w; initializeMode(b, MODE_SOLID_COLOR); }
-    else Serial.println("[WARN] Формат: (R,G,B,W) например (0,0,0,255)");
+    else Serial.println("[WARN] Format: (R,G,B,W), e.g. (0,0,0,255)");
   }
-  else Serial.printf("[WARN] Неизвестная команда: %s\n", cmd.c_str());
+  else Serial.printf("[WARN] Unknown command: %s\n", cmd.c_str());
 }
 
 void handleCommand(String cmd) {
   cmd.trim();
   if (cmd.startsWith("block ")) {
     String rest=cmd.substring(6); int sp=rest.indexOf(' ');
-    if (sp==-1) { Serial.println("[WARN] Использование: block <1-16|all> <mode>"); return; }
+    if (sp==-1) { Serial.println("[WARN] Usage: block <1-16|all> <mode>"); return; }
     String target=rest.substring(0,sp), subcmd=rest.substring(sp+1);
     target.trim(); subcmd.trim();
     if (target.equalsIgnoreCase("all")) { for (int b=0;b<NUM_BLOCKS;b++) handleBlockCommand(b,subcmd); }
     else {
       int blockNum=target.toInt();
-      if (blockNum<1||blockNum>NUM_BLOCKS) { Serial.printf("[WARN] Блок должен быть 1-%d\n",NUM_BLOCKS); return; }
+      if (blockNum<1||blockNum>NUM_BLOCKS) { Serial.printf("[WARN] Block must be 1-%d\n",NUM_BLOCKS); return; }
       handleBlockCommand(blockNum-1, subcmd);
     }
   } else { for (int b=0;b<NUM_BLOCKS;b++) handleBlockCommand(b,cmd); }
@@ -442,10 +442,10 @@ void setup() {
   for (int b=0;b<NUM_BLOCKS;b++) { setDefaultCFadePalette(b); initializeMode(b, MODE_PULSE); }
 
   Serial.printf("LED Slave [%s] ready. MAC: %s\n", MY_DEVICE_ID, WiFi.macAddress().c_str());
-  Serial.println("Добавь в platformio.ini: lib_deps = makuna/NeoPixelBus @ ^2.7.9");
-  Serial.println("Режимы: off|allOn|fade|snake|rain|random|rainbow|fire|pulse|cfade|auto");
-  Serial.println("cfade — переход между цветами. cfade (R,G,B,W),(R,G,B,W),... — свои цвета");
-  Serial.println("Примеры: (0,0,0,255)=белый  (255,0,0,0)=красный");
+  Serial.println("Add to platformio.ini: lib_deps = makuna/NeoPixelBus @ ^2.7.9");
+  Serial.println("Modes: off|allOn|fade|snake|rain|random|rainbow|fire|pulse|cfade|auto");
+  Serial.println("cfade — transition between colors. cfade (R,G,B,W),(R,G,B,W),... — custom colors");
+  Serial.println("Examples: (0,0,0,255)=white  (255,0,0,0)=red");
 }
 
 void loop() {

@@ -12,13 +12,13 @@ BluetoothSerial SerialBT;
 Preferences     prefs;
 
 // =====================
-// Пины
+// Pins
 // =====================
 #define M1_STEP_PIN    4
 #define M1_DIR_PIN     2
 #define M2_STEP_PIN    18
 #define M2_DIR_PIN     5
-#define LIMIT_PIN      15   // INPUT_PULLUP; HIGH = сработал (NC-выключатель), общий для обоих
+#define LIMIT_PIN      15   // INPUT_PULLUP; HIGH = triggered (NC switch), shared by both
 
 // AS5600 I2C
 #define AS5600_SDA      21
@@ -26,15 +26,15 @@ Preferences     prefs;
 #define AS5600_DIR_PIN  23
 
 // TMC UART
-#define TMC1_RX   16   // Serial2, TX через ~1кОм к UART драйвера 1
+#define TMC1_RX   16   // Serial2, TX via ~1kOhm to driver 1 UART
 #define TMC1_TX   17
-#define TMC2_RX   12   // Serial1, TX через ~1кОм к UART драйвера 2
+#define TMC2_RX   12   // Serial1, TX via ~1kOhm to driver 2 UART
 #define TMC2_TX   13
 #define R_SENSE       0.11f
 #define DRIVER_ADDR   0
 
 // =====================
-// Настройки по умолчанию
+// Default settings
 // =====================
 #define DEFAULT_STEPS      50000L
 #define DEFAULT_MAX_SPEED  3000.0f
@@ -43,17 +43,17 @@ Preferences     prefs;
 #define EXTRA_STEPS        500L
 
 // =====================
-// Рабочие параметры
+// Runtime parameters
 // =====================
 long  moveStepsM1  = DEFAULT_STEPS;
 long  moveStepsM2  = DEFAULT_STEPS;
-long  trimM1       = 0;   // постоянная поправка шагов M1 (NVS)
-long  trimM2       = 0;   // постоянная поправка шагов M2 (NVS)
+long  trimM1       = 0;   // permanent M1 step offset (NVS)
+long  trimM2       = 0;   // permanent M2 step offset (NVS)
 float maxSpeed     = DEFAULT_MAX_SPEED;
 float acceleration = DEFAULT_ACCEL;
 
 // =====================
-// Объекты
+// Objects
 // =====================
 AccelStepper   motor1(AccelStepper::DRIVER, M1_STEP_PIN, M1_DIR_PIN);
 AccelStepper   motor2(AccelStepper::DRIVER, M2_STEP_PIN, M2_DIR_PIN);
@@ -61,7 +61,7 @@ TMC2209Stepper driver1(&Serial2, R_SENSE, DRIVER_ADDR);
 TMC2209Stepper driver2(&Serial1, R_SENSE, DRIVER_ADDR);
 
 // =====================
-// Конечный автомат
+// State machine
 // =====================
 enum SystemState { STATE_INIT, STATE_IDLE, STATE_GOING_DOWN, STATE_GOING_UP, STATE_ADJ, STATE_ERROR };
 enum Position    { POS_UNKNOWN = 0, POS_DOWN = 1, POS_UP = 2 };
@@ -78,7 +78,7 @@ unsigned long errorTimer = 0;
 #define UP_DIR   -1
 
 // =====================
-// Вывод в оба интерфейса
+// Output to both interfaces
 // =====================
 #define BOTH_PRINTLN(s)      do { Serial.println(s);                SerialBT.println(s);                } while(0)
 #define BOTH_PRINTF(fmt,...) do { Serial.printf(fmt,##__VA_ARGS__); SerialBT.printf(fmt,##__VA_ARGS__); } while(0)
@@ -176,7 +176,7 @@ void resetSettings() {
 }
 
 // =====================
-// Утилиты
+// Utilities
 // =====================
 bool limitTriggered() { return digitalRead(LIMIT_PIN) == HIGH; }
 
@@ -184,7 +184,7 @@ void hardStop1()   { motor1.setCurrentPosition(motor1.currentPosition()); }
 void hardStop2()   { motor2.setCurrentPosition(motor2.currentPosition()); }
 void hardStopAll() { hardStop1(); hardStop2(); }
 
-// Итоговые шаги с учётом TRIM
+// Final steps including TRIM
 long stepsM1(int dir) { return (moveStepsM1 + (dir == DOWN_DIR ? trimM1 : -trimM1)) * dir; }
 long stepsM2(int dir) { return (moveStepsM2 + (dir == DOWN_DIR ? trimM2 : -trimM2)) * dir; }
 
@@ -193,33 +193,33 @@ long stepsM2(int dir) { return (moveStepsM2 + (dir == DOWN_DIR ? trimM2 : -trimM
 // =====================
 void printHelp() {
   BOTH_PRINTLN("===== SLAVE CONTROLLER 2 =====");
-  BOTH_PRINTLN("-- Управление --");
-  BOTH_PRINTLN("  1           : DOWN (к концевику)");
+  BOTH_PRINTLN("-- Control --");
+  BOTH_PRINTLN("  1           : DOWN (to limit switch)");
   BOTH_PRINTLN("  2           : UP");
   BOTH_PRINTLN("  0           : EMERGENCY STOP");
-  BOTH_PRINTLN("  HOME        : запустить хоминг");
-  BOTH_PRINTLN("-- Шаги --");
-  BOTH_PRINTLN("  M1:<N>      : шаги M1 (100..500000)");
-  BOTH_PRINTLN("  M2:<N>      : шаги M2 (100..500000)");
-  BOTH_PRINTLN("-- Подстройка (если разъехались) --");
-  BOTH_PRINTLN("  ADJ1:<N>    : сдвинуть M1 на N шагов прямо сейчас (+/-)");
-  BOTH_PRINTLN("  ADJ2:<N>    : сдвинуть M2 на N шагов прямо сейчас (+/-)");
-  BOTH_PRINTLN("  TRIM1:<N>   : постоянная поправка M1 шагов (+/-), сохр. NVS");
-  BOTH_PRINTLN("  TRIM2:<N>   : постоянная поправка M2 шагов (+/-), сохр. NVS");
-  BOTH_PRINTLN("-- Параметры движения --");
-  BOTH_PRINTLN("  SPD:<N>     : макс. скорость шаг/с (100..10000)");
-  BOTH_PRINTLN("  ACC:<N>     : ускорение шаг/с^2 (50..5000)");
-  BOTH_PRINTLN("-- Прочее --");
-  BOTH_PRINTLN("  ANG         : угол AS5600 (0..4095)");
-  BOTH_PRINTLN("  POS         : текущие позиции моторов в шагах");
-  BOTH_PRINTLN("  UART        : проверить связь с обоими TMC-драйверами");
-  BOTH_PRINTLN("  i / help    : эта справка");
-  BOTH_PRINTLN("  RESET       : заводские настройки");
-  BOTH_PRINTLN("----- Текущие настройки -----");
+  BOTH_PRINTLN("  HOME        : run homing");
+  BOTH_PRINTLN("-- Steps --");
+  BOTH_PRINTLN("  M1:<N>      : M1 steps (100..500000)");
+  BOTH_PRINTLN("  M2:<N>      : M2 steps (100..500000)");
+  BOTH_PRINTLN("-- Adjustment (if out of sync) --");
+  BOTH_PRINTLN("  ADJ1:<N>    : move M1 by N steps now (+/-)");
+  BOTH_PRINTLN("  ADJ2:<N>    : move M2 by N steps now (+/-)");
+  BOTH_PRINTLN("  TRIM1:<N>   : permanent M1 step offset (+/-), saved to NVS");
+  BOTH_PRINTLN("  TRIM2:<N>   : permanent M2 step offset (+/-), saved to NVS");
+  BOTH_PRINTLN("-- Motion parameters --");
+  BOTH_PRINTLN("  SPD:<N>     : max speed steps/s (100..10000)");
+  BOTH_PRINTLN("  ACC:<N>     : acceleration steps/s^2 (50..5000)");
+  BOTH_PRINTLN("-- Misc --");
+  BOTH_PRINTLN("  ANG         : AS5600 angle (0..4095)");
+  BOTH_PRINTLN("  POS         : current motor positions in steps");
+  BOTH_PRINTLN("  UART        : check link with both TMC drivers");
+  BOTH_PRINTLN("  i / help    : this help");
+  BOTH_PRINTLN("  RESET       : factory reset");
+  BOTH_PRINTLN("----- Current settings -----");
   BOTH_PRINTF ("  M1 steps : %ld  (trim: %+ld)\n", moveStepsM1, trimM1);
   BOTH_PRINTF ("  M2 steps : %ld  (trim: %+ld)\n", moveStepsM2, trimM2);
-  BOTH_PRINTF ("  MaxSpeed : %.0f шаг/с\n",  maxSpeed);
-  BOTH_PRINTF ("  Accel    : %.0f шаг/с^2\n", acceleration);
+  BOTH_PRINTF ("  MaxSpeed : %.0f steps/s\n",  maxSpeed);
+  BOTH_PRINTF ("  Accel    : %.0f steps/s^2\n", acceleration);
   BOTH_PRINTF ("  AS5600   : %u\n",            as5600ReadAngle());
   BOTH_PRINTF ("  Position : %s\n",
     sysPosition == POS_DOWN ? "DOWN" :
@@ -235,7 +235,7 @@ void printHelp() {
 }
 
 // =====================
-// Хоминг (оба параллельно, один концевик)
+// Homing (both in parallel, one limit switch)
 // =====================
 void startHoming() {
   hardStopAll();
@@ -250,7 +250,7 @@ void runInit() {
   switch (homingPhase) {
     case HOMING_IDLE:
       if (limitTriggered()) {
-        // уже на концевике — оба отъезжают
+        // already on the limit switch — both back off
         motor1.move(2000L * UP_DIR);
         motor2.move(2000L * UP_DIR);
         homingPhase = HOMING_BACKOFF;
@@ -262,7 +262,7 @@ void runInit() {
       break;
 
     case HOMING_BACKOFF:
-      // ждём пока оба отъедут
+      // wait until both have backed off
       if (motor1.distanceToGo() == 0 && motor2.distanceToGo() == 0) {
         motor1.move((moveStepsM1 + EXTRA_STEPS * 10) * DOWN_DIR);
         motor2.move((moveStepsM2 + EXTRA_STEPS * 10) * DOWN_DIR);
@@ -281,22 +281,22 @@ void runInit() {
         BOTH_PRINTLN("HOMING_DONE");
         return;
       }
-      // Добавляем экстра-шаги если один из моторов заканчивает раньше
+      // Add extra steps if one of the motors finishes earlier
       if (motor1.distanceToGo() == 0 && !m1Extra) { motor1.move(EXTRA_STEPS * DOWN_DIR); m1Extra = true; }
       if (motor2.distanceToGo() == 0 && !m2Extra) { motor2.move(EXTRA_STEPS * DOWN_DIR); m2Extra = true; }
-      // Оба закончили — концевик так и не сработал
+      // Both finished — limit switch never triggered
       if (motor1.distanceToGo() == 0 && m1Extra &&
           motor2.distanceToGo() == 0 && m2Extra) {
         sysState    = STATE_ERROR;
         homingPhase = HOMING_IDLE;
-        BOTH_PRINTLN("ERROR: концевик не сработал при хоминге!");
+        BOTH_PRINTLN("ERROR: limit switch not triggered during homing!");
       }
       break;
   }
 }
 
 // =====================
-// Движение вниз (оба параллельно)
+// Move down (both in parallel)
 // =====================
 void startGoDown() {
   m1Extra = m2Extra = false;
@@ -319,19 +319,19 @@ void runGoDown() {
     BOTH_PRINTLN("DOWN_DONE (limit)");
     return;
   }
-  // Экстра-шаги если концевик ещё не сработал
+  // Extra steps if the limit switch has not triggered yet
   if (m1Done && !m1Extra) { motor1.move(EXTRA_STEPS * DOWN_DIR); m1Extra = true; }
   if (m2Done && !m2Extra) { motor2.move(EXTRA_STEPS * DOWN_DIR); m2Extra = true; }
 
   if (motor1.distanceToGo() == 0 && m1Extra &&
       motor2.distanceToGo() == 0 && m2Extra) {
     sysState = STATE_ERROR;
-    BOTH_PRINTLN("ERROR: концевик не сработал при опускании!");
+    BOTH_PRINTLN("ERROR: limit switch not triggered while lowering!");
   }
 }
 
 // =====================
-// Движение вверх (оба параллельно)
+// Move up (both in parallel)
 // =====================
 void startGoUp() {
   sysState = STATE_GOING_UP;
@@ -349,7 +349,7 @@ void runGoUp() {
 }
 
 // =====================
-// Подстройка (ADJ) — ручное смещение одного мотора
+// Adjustment (ADJ) — manual offset of a single motor
 // =====================
 void runAdj() {
   if (motor1.distanceToGo() == 0 && motor2.distanceToGo() == 0) {
@@ -363,7 +363,7 @@ void runAdj() {
 void checkDrivers();
 
 // =====================
-// Команды (USB Serial + BT)
+// Commands (USB Serial + BT)
 // =====================
 String btBuffer  = "";
 String usbBuffer = "";
@@ -408,7 +408,7 @@ void processLine(const String &line) {
     startGoUp(); return;
   }
 
-  // --- Шаги ---
+  // --- Steps ---
   if (line.startsWith("M1:") || line.startsWith("m1:")) {
     if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
     long val = line.substring(3).toInt();
@@ -424,7 +424,7 @@ void processLine(const String &line) {
     BOTH_PRINTF("OK: M2 steps = %ld\n", moveStepsM2); return;
   }
 
-  // --- Подстройка: немедленный сдвиг ---
+  // --- Adjustment: immediate offset ---
   if (line.startsWith("ADJ1:") || line.startsWith("adj1:")) {
     if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
     long val = line.substring(5).toInt();
@@ -442,7 +442,7 @@ void processLine(const String &line) {
     BOTH_PRINTF("ADJ2: moving M2 by %+ld steps\n", val); return;
   }
 
-  // --- Подстройка: постоянная поправка ---
+  // --- Adjustment: permanent offset ---
   if (line.startsWith("TRIM1:") || line.startsWith("trim1:")) {
     if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
     long val = line.substring(6).toInt();
@@ -458,7 +458,7 @@ void processLine(const String &line) {
     BOTH_PRINTF("OK: TRIM2 = %+ld steps\n", trimM2); return;
   }
 
-  // --- Скорость / ускорение ---
+  // --- Speed / acceleration ---
   if (line.startsWith("SPD:") || line.startsWith("spd:")) {
     if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
     long val = line.substring(4).toInt();
@@ -488,7 +488,7 @@ void handleSerial() {
       if (usbBuffer.length() > 64) usbBuffer = "";
     }
   }
-  // Опрашиваем BT только когда моторы стоят — BT стек задерживает loop во время движения
+  // Poll BT only while motors are stopped — the BT stack delays loop() during motion
   bool motorsMoving = (motor1.distanceToGo() != 0 || motor2.distanceToGo() != 0);
   if (!motorsMoving) {
     while (SerialBT.available()) {
@@ -505,7 +505,7 @@ void handleSerial() {
 }
 
 // =====================
-// ESP-NOW команды
+// ESP-NOW commands
 // =====================
 void handleEspNow() {
   if (!espNowCmdPending) return;
@@ -532,7 +532,7 @@ void handleEspNow() {
 }
 
 // =====================
-// Диагностика UART TMC
+// TMC UART diagnostics
 // =====================
 void checkOneDriver(TMC2209Stepper &drv, const char *name) {
   uint32_t ioin    = drv.IOIN();
@@ -541,14 +541,14 @@ void checkOneDriver(TMC2209Stepper &drv, const char *name) {
 
   if (version == 0x21) {
     BOTH_PRINTF("%s UART OK  version=0x21  DRV_STATUS=0x%08X\n", name, status);
-    // Проверяем признаки проблем в DRV_STATUS
+    // Check DRV_STATUS for signs of problems
     if (status & (1 << 22)) BOTH_PRINTF("  %s WARNING: overtemperature!\n", name);
     if (status & (1 << 21)) BOTH_PRINTF("  %s WARNING: overtemperature prewarning\n", name);
     if (status & (1 <<  0)) BOTH_PRINTF("  %s INFO: stall detected\n", name);
   } else if (ioin == 0x00000000 || ioin == 0xFFFFFFFF) {
-    BOTH_PRINTF("%s UART FAIL — нет ответа (IOIN=0x%08X). Проверь подключение.\n", name, ioin);
+    BOTH_PRINTF("%s UART FAIL — no response (IOIN=0x%08X). Check wiring.\n", name, ioin);
   } else {
-    BOTH_PRINTF("%s UART WARN — неизвестная версия 0x%02X (IOIN=0x%08X)\n", name, version, ioin);
+    BOTH_PRINTF("%s UART WARN — unknown version 0x%02X (IOIN=0x%08X)\n", name, version, ioin);
   }
 }
 

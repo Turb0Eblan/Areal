@@ -1,27 +1,27 @@
-===== СПИСОК КОМАНД =====
+===== COMMAND LIST =====
 
---- АКТУАЛЬНЫЕ КОМАНДЫ ---
+--- CURRENT COMMANDS ---
 
-Управление механизмами (Serial / MQTT / и т.д.):
+Mechanism control (Serial / MQTT / etc.):
 
-  m2-2 up       — механизм справа: подъём
-  m2-2 down     — механизм справа: опускание
+  m2-2 up       — right mechanism: raise
+  m2-2 down     — right mechanism: lower
 
-  m2-1 up       — механизм слева: подъём
-  m2-1 down     — механизм слева: опускание
+  m2-1 up       — left mechanism: raise
+  m2-1 down     — left mechanism: lower
 
-  m4 up         — центральный механизм: подъём
-  m4 down       — центральный механизм: опускание
+  m4 up         — center mechanism: raise
+  m4 down       — center mechanism: lower
 
-  motors up     — все механизмы разом: подъём
-  motors down   — все механизмы разом: опускание
+  motors up     — all mechanisms at once: raise
+  motors down   — all mechanisms at once: lower
 
---- НЕ РАБОТАЕТ ---
+--- NOT WORKING ---
 
-  led on        — [НЕ РАБОТАЕТ] включение LED-подсветки
-  led off       — [НЕ РАБОТАЕТ] выключение LED-подсветки
-  led <цвет>    — [НЕ РАБОТАЕТ] управление цветом LED
+  led on        — [NOT WORKING] turn LED lighting on
+  led off       — [NOT WORKING] turn LED lighting off
+  led <color>   — [NOT WORKING] set LED color
 
-  ! Управление LED на данный момент не реализовано / не функционирует.
+  ! LED control is currently not implemented / not functional.
 
 =========================

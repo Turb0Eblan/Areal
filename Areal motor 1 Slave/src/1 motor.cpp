@@ -12,25 +12,25 @@ BluetoothSerial SerialBT;
 Preferences     prefs;
 
 // =====================
-// Пины
+// Pins
 // =====================
 #define STEP_PIN      4
 #define DIR_PIN       2
-#define LIMIT_PIN     15   // INPUT_PULLUP; HIGH = концевик сработал (NC-выключатель)
+#define LIMIT_PIN     15   // INPUT_PULLUP; HIGH = limit switch triggered (NC switch)
 
 // AS5600 I2C
 #define AS5600_SDA    21
 #define AS5600_SCL    22
-#define AS5600_DIR_PIN 23  // DIR-пин AS5600 (задаёт направление счёта)
+#define AS5600_DIR_PIN 23  // AS5600 DIR pin (sets counting direction)
 
-// TMC UART: RX2=16, TX2=17 (TX через резистор ~1кОм к RX контроллера)
+// TMC UART: RX2=16, TX2=17 (TX via ~1kOhm resistor to controller RX)
 #define TMC_RX        16
 #define TMC_TX        17
 #define R_SENSE       0.11f
 #define DRIVER_ADDR   0
 
 // =====================
-// Настройки по умолчанию
+// Default settings
 // =====================
 #define DEFAULT_STEPS      50000L
 #define DEFAULT_MAX_SPEED  3000.0f
@@ -39,20 +39,20 @@ Preferences     prefs;
 #define EXTRA_STEPS        500L
 
 // =====================
-// Рабочие параметры
+// Runtime parameters
 // =====================
 long  moveSteps   = DEFAULT_STEPS;
 float maxSpeed    = DEFAULT_MAX_SPEED;
 float acceleration = DEFAULT_ACCEL;
 
 // =====================
-// Объекты
+// Objects
 // =====================
 AccelStepper  motor(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 TMC2209Stepper driver(&Serial2, R_SENSE, DRIVER_ADDR);
 
 // =====================
-// Конечный автомат
+// State machine
 // =====================
 enum SystemState { STATE_INIT, STATE_IDLE, STATE_GOING_DOWN, STATE_GOING_UP, STATE_ERROR };
 enum Position    { POS_UNKNOWN = 0, POS_DOWN = 1, POS_UP = 2 };
@@ -98,7 +98,7 @@ void initEspNow() {
 // =====================
 uint16_t as5600ReadAngle() {
   Wire.beginTransmission(0x36);
-  Wire.write(0x0E);  // угол (фильтрованный), старший байт
+  Wire.write(0x0E);  // angle (filtered), high byte
   if (Wire.endTransmission(false) != 0) return 0xFFFF;
   Wire.requestFrom((uint8_t)0x36, (uint8_t)2);
   if (Wire.available() < 2) return 0xFFFF;
@@ -109,7 +109,7 @@ uint16_t as5600ReadAngle() {
 
 void initAS5600() {
   pinMode(AS5600_DIR_PIN, OUTPUT);
-  digitalWrite(AS5600_DIR_PIN, LOW);  // CW — при необходимости поменять на HIGH
+  digitalWrite(AS5600_DIR_PIN, LOW);  // CW — change to HIGH if needed
   Wire.begin(AS5600_SDA, AS5600_SCL);
   uint16_t angle = as5600ReadAngle();
   if (angle == 0xFFFF)
@@ -156,7 +156,7 @@ void resetSettings() {
 }
 
 // =====================
-// Утилиты
+// Utilities
 // =====================
 bool limitTriggered() { return digitalRead(LIMIT_PIN) == HIGH; }
 
@@ -165,28 +165,28 @@ void hardStop() { motor.setCurrentPosition(motor.currentPosition()); }
 void moveMotor(long steps, int dir) { motor.move((long)steps * dir); }
 
 // =====================
-// Help / статус
+// Help / status
 // =====================
-// Вывод в оба интерфейса одновременно
+// Output to both interfaces simultaneously
 #define BOTH_PRINTLN(s)      do { Serial.println(s);      SerialBT.println(s);      } while(0)
 #define BOTH_PRINTF(fmt,...) do { Serial.printf(fmt,##__VA_ARGS__); SerialBT.printf(fmt,##__VA_ARGS__); } while(0)
 
 void printHelp() {
   BOTH_PRINTLN("===== SLAVE CONTROLLER =====");
-  BOTH_PRINTLN("  1          : go DOWN (к концевику)");
+  BOTH_PRINTLN("  1          : go DOWN (to limit switch)");
   BOTH_PRINTLN("  2          : go UP");
   BOTH_PRINTLN("  0          : EMERGENCY STOP");
-  BOTH_PRINTLN("  HOME       : запустить хоминг");
-  BOTH_PRINTLN("  STEPS:<N>  : шаги движения (100..500000)");
-  BOTH_PRINTLN("  SPD:<N>    : макс. скорость шаг/с (100..10000)");
-  BOTH_PRINTLN("  ACC:<N>    : ускорение шаг/с^2 (50..5000)");
-  BOTH_PRINTLN("  ANG        : прочитать угол AS5600 (0..4095)");
-  BOTH_PRINTLN("  i / help   : эта справка");
-  BOTH_PRINTLN("  RESET      : заводские настройки");
-  BOTH_PRINTLN("----- Текущие настройки -----");
+  BOTH_PRINTLN("  HOME       : run homing");
+  BOTH_PRINTLN("  STEPS:<N>  : move steps (100..500000)");
+  BOTH_PRINTLN("  SPD:<N>    : max speed steps/s (100..10000)");
+  BOTH_PRINTLN("  ACC:<N>    : acceleration steps/s^2 (50..5000)");
+  BOTH_PRINTLN("  ANG        : read AS5600 angle (0..4095)");
+  BOTH_PRINTLN("  i / help   : this help");
+  BOTH_PRINTLN("  RESET      : factory reset");
+  BOTH_PRINTLN("----- Current settings -----");
   BOTH_PRINTF ("  Steps    : %ld\n",        moveSteps);
-  BOTH_PRINTF ("  MaxSpeed : %.0f шаг/с\n", maxSpeed);
-  BOTH_PRINTF ("  Accel    : %.0f шаг/с^2\n", acceleration);
+  BOTH_PRINTF ("  MaxSpeed : %.0f steps/s\n", maxSpeed);
+  BOTH_PRINTF ("  Accel    : %.0f steps/s^2\n", acceleration);
   BOTH_PRINTF ("  AS5600   : %u\n",          as5600ReadAngle());
   BOTH_PRINTF ("  Position : %s\n",
     sysPosition == POS_DOWN ? "DOWN" :
@@ -201,7 +201,7 @@ void printHelp() {
 }
 
 // =====================
-// Хоминг
+// Homing
 // =====================
 void startHoming() {
   hardStop();
@@ -218,7 +218,7 @@ void runInit() {
   switch (homingPhase) {
     case HOMING_IDLE:
       if (limitTriggered()) {
-        // уже на концевике — сначала отъехать
+        // already on the limit switch — back off first
         moveMotor(2000, UP_DIR);
         homingPhase = HOMING_BACKOFF;
       } else {
@@ -228,7 +228,7 @@ void runInit() {
       break;
 
     case HOMING_BACKOFF:
-      // ждём, пока отъедем от концевика
+      // wait until we back off the limit switch
       if (motor.distanceToGo() == 0) {
         moveMotor(moveSteps + EXTRA_STEPS * 10, DOWN_DIR);
         homingPhase = HOMING_SEEKING;
@@ -250,7 +250,7 @@ void runInit() {
       } else if (motor.distanceToGo() == 0 && motorExtra) {
         sysState    = STATE_ERROR;
         homingPhase = HOMING_IDLE;
-        Serial.println("ERROR: концевик не сработал при хоминге!");
+        Serial.println("ERROR: limit switch not triggered during homing!");
         SerialBT.println("ERROR: limit not triggered during homing!");
       }
       break;
@@ -258,7 +258,7 @@ void runInit() {
 }
 
 // =====================
-// Движение вниз (к концевику)
+// Move down (to limit switch)
 // =====================
 void startGoDown() {
   motorDone  = false;
@@ -289,13 +289,13 @@ void runGoDown() {
   } else if (motor.distanceToGo() == 0 && motorExtra) {
     motorDone = true;
     sysState  = STATE_ERROR;
-    Serial.println("ERROR: концевик не сработал при опускании!");
+    Serial.println("ERROR: limit switch not triggered while lowering!");
     SerialBT.println("ERROR: limit not triggered going down!");
   }
 }
 
 // =====================
-// Движение вверх
+// Move up
 // =====================
 void startGoUp() {
   motorDone  = false;
@@ -318,7 +318,7 @@ void runGoUp() {
 }
 
 // =====================
-// Команды (Serial + BT)
+// Commands (Serial + BT)
 // =====================
 String btBuffer  = "";
 String usbBuffer = "";
@@ -407,7 +407,7 @@ void handleSerial() {
 }
 
 // =====================
-// ESP-NOW-команды
+// ESP-NOW commands
 // =====================
 void handleEspNow() {
   if (!espNowCmdPending) return;
@@ -439,7 +439,7 @@ void handleEspNow() {
 void setup() {
   Serial.begin(115200);
   SerialBT.begin("Slave Motor 1-1");
-  // 1-1 1-2 для разных моторов
+  // 1-1 1-2 for different motors
 
   pinMode(LIMIT_PIN, INPUT_PULLUP);
   pinMode(STEP_PIN,  OUTPUT);
@@ -447,7 +447,7 @@ void setup() {
 
   initAS5600();
 
-  // TMC2209 UART: RX2=16, TX2=17 (TX2 через ~1кОм резистор к TMC UART)
+  // TMC2209 UART: RX2=16, TX2=17 (TX2 via ~1kOhm resistor to TMC UART)
   Serial2.begin(115200, SERIAL_8N1, TMC_RX, TMC_TX);
   driver.begin();
   driver.toff(5);

@@ -1,14 +1,14 @@
 /*
  * 5-Motor Slave Controller
  *
- * Порядок подъёма (0=верхний, 4=нижний):
- *   M1: dir=4  step=2   TMC2209 | UART: RX=18, TX=19 (1кОм между 19→18)
- *   M2: dir=15 step=21  TMC2209 | UART: RX=16(RX2), TX=17(TX2) — аппаратный Serial2
+ * Lift order (0=top, 4=bottom):
+ *   M1: dir=4  step=2   TMC2209 | UART: RX=18, TX=19 (1kOhm between 19→18)
+ *   M2: dir=15 step=21  TMC2209 | UART: RX=16(RX2), TX=17(TX2) — hardware Serial2
  *   M3: dir=25 step=26  TB6600
  *   M4: dir=27 step=14  TB6600
- *   M5: dir=12 step=13  TB6600  (GPIO12 безопасен — eFuse прожжён)
+ *   M5: dir=12 step=13  TB6600  (GPIO12 is safe — eFuse burned)
  *
- * Концевики (NC, INPUT_PULLUP, HIGH=сработал):
+ * Limit switches (NC, INPUT_PULLUP, HIGH=triggered):
  *   M1→5   M2→33  M3→32  M4→22  M5→23
  */
 
@@ -23,7 +23,7 @@
 #include <esp_coexist.h>
 
 // =====================
-// Пины
+// Pins
 // =====================
 #define STEP1   2
 #define STEP2  21
@@ -35,17 +35,17 @@
 #define DIR2   15
 #define DIR3   25
 #define DIR4   27
-#define DIR5   12   // GPIO12 безопасен после прожигания eFuse
+#define DIR5   12   // GPIO12 is safe after burning the eFuse
 
-#define LIM1    5   // M1 (верхний)
+#define LIM1    5   // M1 (top)
 #define LIM2   33   // M2
 #define LIM3   32   // M3
 #define LIM4   22   // M4
-#define LIM5   23   // M5 (нижний)
+#define LIM5   23   // M5 (bottom)
 
 // TMC2209 UART
-// M1: Serial1, RX=18 (провод от PDN_UART), TX=19 (через 1кОм к 18)
-// M2: Serial2, RX=16(RX2), TX=17(TX2) — аппаратный UART2, нет конфликтов
+// M1: Serial1, RX=18 (wire from PDN_UART), TX=19 (via 1kOhm to 18)
+// M2: Serial2, RX=16(RX2), TX=17(TX2) — hardware UART2, no conflicts
 #define TMC1_RX  18
 #define TMC1_TX  19
 #define TMC2_RX  16
@@ -59,17 +59,17 @@ static const uint8_t STEP_PINS[5] = { STEP1, STEP2, STEP3, STEP4, STEP5 };
 static const uint8_t DIR_PINS[5]  = { DIR1,  DIR2,  DIR3,  DIR4,  DIR5  };
 
 // =====================
-// Константы
+// Constants
 // =====================
 #define NUM_MOTORS     5
-#define UP_MOTORS      4   // M5 при общем подъёме остаётся на месте
+#define UP_MOTORS      4   // M5 stays in place during a full raise
 #define DEFAULT_SPEED  8000.0f
 #define DEFAULT_ACCEL   600.0f
 #define EXTRA_STEPS     800L
 #define DOWN_DIR        1
 #define UP_DIR         -1
 
-// Заводские шаги по умолчанию (на первом запуске / после RESET), по мотору
+// Factory default steps (on first boot / after RESET), per motor
 static const long DEFAULT_STEPS[NUM_MOTORS] = { 140000L, 100000L, 60000L, 40000L, 50000L };
 
 // =====================
@@ -88,7 +88,7 @@ AccelStepper* const motors[NUM_MOTORS] = {
 // =====================
 // TMC2209
 // Serial1 (M1): RX=18, TX=19
-// Serial2 (M2): RX=16(RX2), TX=17(TX2) — аппаратный UART2, нет конфликтов
+// Serial2 (M2): RX=16(RX2), TX=17(TX2) — hardware UART2, no conflicts
 // =====================
 TMC2209Stepper tmc1(&Serial1, TMC_R_SENSE, 0);
 TMC2209Stepper tmc2(&Serial2, TMC_R_SENSE, 0);
@@ -137,13 +137,13 @@ void applyTMCParams(int mA, int mstep) {
 }
 
 // =====================
-// Прочие объекты
+// Other objects
 // =====================
 BluetoothSerial SerialBT;
 Preferences     prefs;
 
 // =====================
-// Рабочие параметры
+// Runtime parameters
 // =====================
 long  moveSteps[NUM_MOTORS];
 long  trimSteps[NUM_MOTORS];
@@ -151,7 +151,7 @@ float maxSpeed     = DEFAULT_SPEED;
 float acceleration = DEFAULT_ACCEL;
 
 // =====================
-// Состояние системы
+// System state
 // =====================
 enum SystemState { STATE_INIT, STATE_IDLE, STATE_GOING_DOWN, STATE_GOING_UP, STATE_ADJ, STATE_ERROR };
 enum Position    { POS_UNKNOWN = 0, POS_DOWN = 1, POS_UP = 2 };
@@ -167,11 +167,11 @@ int         adjMotorIdx = -1;
 int         adjDir      = 0;
 unsigned long errorTimer = 0;
 
-// Режим движения: false=одновременно, true=последовательно (DOWN: M5→M1, UP: M1→M4)
+// Motion mode: false=simultaneous, true=sequential (DOWN: M5→M1, UP: M1→M4)
 bool seqMode = false;
 
 // =====================
-// Вывод
+// Output
 // =====================
 #define BOTH_PRINTLN(s)       do { Serial.println(s);                 SerialBT.println(s);                 } while(0)
 #define BOTH_PRINTF(fmt, ...) do { Serial.printf(fmt, ##__VA_ARGS__); SerialBT.printf(fmt, ##__VA_ARGS__); } while(0)
@@ -197,14 +197,14 @@ void initEspNow() {
   WiFi.disconnect();
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 
-  // Слейв держит BluetoothSerial постоянно включённым параллельно с ESP-NOW.
-  // На классическом ESP32 Wi-Fi и BT Classic делят одну радиочасть по времени.
-  // ВАЖНО: esp_wifi_set_ps(WIFI_PS_NONE) здесь НЕЛЬЗЯ — при активном BT Classic
-  // закрытая либа Wi-Fi (libnet80211) жёстко требует включённый modem sleep и
-  // вызывает abort() ("Should enable WiFi modem sleep when both WiFi and
-  // Bluetooth are enabled"), был живой краш/бут-луп при проверке. Оставляем
-  // штатный WIFI_PS_MIN_MODEM (по умолчанию) и только смещаем арбитраж эфира
-  // в пользу Wi-Fi — BT-консоль не критична ко времени, а команды моторов критичны.
+  // The slave keeps BluetoothSerial always on alongside ESP-NOW.
+  // On the classic ESP32, Wi-Fi and BT Classic time-share a single radio.
+  // IMPORTANT: esp_wifi_set_ps(WIFI_PS_NONE) must NOT be used here — with BT Classic active
+  // the closed-source Wi-Fi lib (libnet80211) strictly requires modem sleep and
+  // calls abort() ("Should enable WiFi modem sleep when both WiFi and
+  // Bluetooth are enabled"); this caused a real crash/boot loop in testing. We keep
+  // the stock WIFI_PS_MIN_MODEM (default) and only bias radio arbitration
+  // toward Wi-Fi — the BT console is not time-critical, motor commands are.
   esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
 
   if (esp_now_init() != ESP_OK) { Serial.println("ESP-NOW FAIL"); return; }
@@ -263,9 +263,9 @@ void resetSettings() {
 }
 
 // =====================
-// Утилиты
+// Utilities
 // =====================
-bool limitTriggered(int i) { return digitalRead(LIM_PINS[i]) == HIGH; } // NC-концевики: HIGH=сработал
+bool limitTriggered(int i) { return digitalRead(LIM_PINS[i]) == HIGH; } // NC limit switches: HIGH=triggered
 
 void hardStop(int i) { motors[i]->setCurrentPosition(motors[i]->currentPosition()); }
 void hardStopAll()   { for (int i = 0; i < NUM_MOTORS; i++) hardStop(i); }
@@ -286,7 +286,7 @@ bool upperMotorsUp(int idx) {
 }
 
 // =====================
-// Хоминг
+// Homing
 // =====================
 void startHoming() {
   hardStopAll();
@@ -298,11 +298,11 @@ void startHoming() {
     BOTH_PRINTLN("HOMING: start (SEQ, M5→M1)");
   } else {
     homingPhase = HP_SEEKING;
-    BOTH_PRINTLN("HOMING: start (SIM, все одновременно)");
+    BOTH_PRINTLN("HOMING: start (SIM, all at once)");
     for (int i = 0; i < NUM_MOTORS; i++) {
       if (limitTriggered(i)) {
         motors[i]->setCurrentPosition(0);
-        motorPos[i] = POS_DOWN;  // уже на месте
+        motorPos[i] = POS_DOWN;  // already in place
       } else {
         motors[i]->move((moveSteps[i] + EXTRA_STEPS * 10) * DOWN_DIR);
       }
@@ -310,16 +310,16 @@ void startHoming() {
   }
 }
 
-// --- SIM хоминг: все моторы одновременно ---
+// --- SIM homing: all motors at once ---
 void runInitSim() {
   bool allDone = true;
   for (int i = 0; i < NUM_MOTORS; i++) {
-    if (motorPos[i] == POS_DOWN) continue;  // loop() уже остановил по концевику
+    if (motorPos[i] == POS_DOWN) continue;  // loop() already stopped it at the limit switch
     if (motors[i]->distanceToGo() == 0 && !extraStep[i]) {
       motors[i]->move(EXTRA_STEPS * DOWN_DIR); extraStep[i] = true;
     }
     if (motors[i]->distanceToGo() != 0) { allDone = false; continue; }
-    // Шаги закончились, концевик не сработал — считаем за нижнее положение
+    // Ran out of steps without triggering the limit switch — treat as bottom position
     motorPos[i] = POS_DOWN;
   }
   if (allDone) {
@@ -329,7 +329,7 @@ void runInitSim() {
   }
 }
 
-// --- SEQ хоминг: M5→M4→...→M1 ---
+// --- SEQ homing: M5→M4→...→M1 ---
 void runInitSeq() {
   AccelStepper &m = *motors[seqIndex];
   switch (homingPhase) {
@@ -378,10 +378,10 @@ void runInitSeq() {
 void runInit() { if (seqMode) runInitSeq(); else runInitSim(); }
 
 // =====================
-// Движение вниз
+// Move down
 // =====================
 
-// --- Одновременно (все моторы сразу) ---
+// --- Simultaneous (all motors at once) ---
 void startGoDownSim() {
   for (int i = 0; i < NUM_MOTORS; i++) extraStep[i] = false;
   sysState = STATE_GOING_DOWN;
@@ -394,9 +394,9 @@ void startGoDownSim() {
   }
   if (!anyStarted) {
     sysPosition = POS_DOWN; sysState = STATE_IDLE;
-    BOTH_PRINTLN("DOWN: все уже внизу"); return;
+    BOTH_PRINTLN("DOWN: all already down"); return;
   }
-  BOTH_PRINTLN("CMD: DOWN (одновременно)");
+  BOTH_PRINTLN("CMD: DOWN (simultaneous)");
 }
 
 void runGoDownSim() {
@@ -426,7 +426,7 @@ void runGoDownSim() {
   }
 }
 
-// --- Последовательно (M5→M4→M3→M2→M1) ---
+// --- Sequential (M5→M4→M3→M2→M1) ---
 static void downSeqStartNext() {
   while (seqIndex >= 0 && motorPos[seqIndex] == POS_DOWN) seqIndex--;
   if (seqIndex < 0) {
@@ -466,15 +466,15 @@ void runGoDownSeq() {
   }
 }
 
-// --- Диспетчер ---
+// --- Dispatcher ---
 void startGoDown() { if (seqMode) startGoDownSeq(); else startGoDownSim(); }
 void runGoDown()   { if (seqMode) runGoDownSeq();   else runGoDownSim();   }
 
 // =====================
-// Движение вверх
+// Move up
 // =====================
 
-// --- Одновременно (M1..M4) ---
+// --- Simultaneous (M1..M4) ---
 void startGoUpSim() {
   sysState = STATE_GOING_UP;
   bool anyStarted = false;
@@ -485,9 +485,9 @@ void startGoUpSim() {
   }
   if (!anyStarted) {
     sysPosition = POS_UP; sysState = STATE_IDLE;
-    BOTH_PRINTLN("UP: все уже вверху"); return;
+    BOTH_PRINTLN("UP: all already up"); return;
   }
-  BOTH_PRINTLN("CMD: UP (M1..M4 одновременно, M5 остаётся)");
+  BOTH_PRINTLN("CMD: UP (M1..M4 simultaneous, M5 stays)");
 }
 
 void runGoUpSim() {
@@ -504,17 +504,17 @@ void runGoUpSim() {
   }
 }
 
-// --- Последовательно (M1→M2→M3→M4) ---
+// --- Sequential (M1→M2→M3→M4) ---
 void startGoUpSeq() {
   seqIndex = 0; sysState = STATE_GOING_UP;
-  // пропускаем уже поднятые
+  // skip motors already raised
   while (seqIndex < UP_MOTORS && motorPos[seqIndex] == POS_UP) seqIndex++;
   if (seqIndex >= UP_MOTORS) {
     sysPosition = POS_UP; sysState = STATE_IDLE;
-    BOTH_PRINTLN("UP: все уже вверху"); return;
+    BOTH_PRINTLN("UP: all already up"); return;
   }
   motors[seqIndex]->move(effectiveSteps(seqIndex, UP_DIR));
-  BOTH_PRINTLN("CMD: UP (M1→M4 по очереди, M5 остаётся)");
+  BOTH_PRINTLN("CMD: UP (M1→M4 one by one, M5 stays)");
   BOTH_PRINTF("UP: M%d...\n", seqIndex+1);
 }
 
@@ -532,16 +532,16 @@ void runGoUpSeq() {
   BOTH_PRINTF("UP: M%d...\n", seqIndex+1);
 }
 
-// --- Диспетчер ---
+// --- Dispatcher ---
 void startGoUp() { if (seqMode) startGoUpSeq(); else startGoUpSim(); }
 void runGoUp()   { if (seqMode) runGoUpSeq();   else runGoUpSim();   }
 
 // =====================
-// Подстройка
+// Adjustment
 // =====================
 void runAdj() {
   if (adjMotorIdx < 0) { sysState = STATE_IDLE; return; }
-  // Проверяем только тот мотор, который двигается
+  // Check only the motor that is moving
   if (motors[adjMotorIdx]->distanceToGo() != 0) return;
   motorPos[adjMotorIdx] = (adjDir == UP_DIR) ? POS_UP : POS_DOWN;
   BOTH_PRINTF("ADJ done: M%d pos=%ld [%s]\n",
@@ -555,7 +555,7 @@ void runAdj() {
 // =====================
 void runTest() {
   if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
-  BOTH_PRINTLN("TEST: 400 шагов вперёд/назад...");
+  BOTH_PRINTLN("TEST: 400 steps forward/back...");
   for (int i = 0; i < NUM_MOTORS; i++) {
     BOTH_PRINTF("  M%d (step=%d dir=%d)... ", i+1, STEP_PINS[i], DIR_PINS[i]);
     motors[i]->setMaxSpeed(400); motors[i]->setAcceleration(200); motors[i]->move(400);
@@ -587,33 +587,33 @@ void printHelp() {
   BOTH_PRINTLN("M3: dir=25 step=26       TB6600   lim=32");
   BOTH_PRINTLN("M4: dir=27 step=14       TB6600   lim=22");
   BOTH_PRINTLN("M5: dir=12 step=13 (bot) TB6600   lim=23");
-  BOTH_PRINTLN("Концевики: NC (HIGH=сработал)");
-  BOTH_PRINTF("Режим: %s (MODE:SIM / MODE:SEQ)\n", seqMode ? "SEQ (по очереди)" : "SIM (одновременно)");
-  BOTH_PRINTLN("--- Все моторы ---");
-  BOTH_PRINTLN("  1        : DOWN (до концевиков)");
-  BOTH_PRINTLN("  2        : UP  (M1..M4, M5 стоит)");
+  BOTH_PRINTLN("Limit switches: NC (HIGH=triggered)");
+  BOTH_PRINTF("Mode: %s (MODE:SIM / MODE:SEQ)\n", seqMode ? "SEQ (one by one)" : "SIM (simultaneous)");
+  BOTH_PRINTLN("--- All motors ---");
+  BOTH_PRINTLN("  1        : DOWN (to limit switches)");
+  BOTH_PRINTLN("  2        : UP  (M1..M4, M5 stays)");
   BOTH_PRINTLN("  0        : EMERGENCY STOP");
-  BOTH_PRINTLN("  HOME     : хоминг");
-  BOTH_PRINTLN("  TEST     : тест каждого мотора");
-  BOTH_PRINTLN("  MODE:SIM : одновременно (по умолчанию)");
-  BOTH_PRINTLN("  MODE:SEQ : по очереди (DOWN: M5→M1, UP: M1→M4)");
-  BOTH_PRINTLN("--- Один мотор (N=1..5) ---");
-  BOTH_PRINTLN("  MN:UP      : поднять N");
-  BOTH_PRINTLN("  MN:DOWN    : опустить N");
-  BOTH_PRINTLN("  MN:STOP    : стоп N");
-  BOTH_PRINTLN("  MN:ADJ:<n> : сдвинуть (+n=UP, -n=DOWN)");
-  BOTH_PRINTLN("  MN:S:<n>   : шаги (100..500000)");
-  BOTH_PRINTLN("  MN:T:<n>   : поправка (-50000..50000)");
+  BOTH_PRINTLN("  HOME     : homing");
+  BOTH_PRINTLN("  TEST     : test each motor");
+  BOTH_PRINTLN("  MODE:SIM : simultaneous (default)");
+  BOTH_PRINTLN("  MODE:SEQ : one by one (DOWN: M5→M1, UP: M1→M4)");
+  BOTH_PRINTLN("--- Single motor (N=1..5) ---");
+  BOTH_PRINTLN("  MN:UP      : raise N");
+  BOTH_PRINTLN("  MN:DOWN    : lower N");
+  BOTH_PRINTLN("  MN:STOP    : stop N");
+  BOTH_PRINTLN("  MN:ADJ:<n> : move (+n=UP, -n=DOWN)");
+  BOTH_PRINTLN("  MN:S:<n>   : steps (100..500000)");
+  BOTH_PRINTLN("  MN:T:<n>   : offset (-50000..50000)");
   BOTH_PRINTLN("--- TMC2209 ---");
-  BOTH_PRINTLN("  CURR:<mA>  : ток M1+M2 (100..2000)");
-  BOTH_PRINTLN("  MSTEP:<n>  : микрошаги M1+M2 (1/2/4/8/16/32/64/128/256)");
-  BOTH_PRINTLN("  TMCSTAT    : статус драйверов");
-  BOTH_PRINTLN("--- Все моторы сразу ---");
-  BOTH_PRINTLN("  S:<n>      : шаги для всех (100..500000)");
-  BOTH_PRINTLN("  T:<n>      : поправка для всех (-50000..50000)");
-  BOTH_PRINTLN("--- Параметры ---");
-  BOTH_PRINTLN("  SPD:<n>    : скорость (100..8000)");
-  BOTH_PRINTLN("  ACC:<n>    : ускорение (50..3000)");
+  BOTH_PRINTLN("  CURR:<mA>  : M1+M2 current (100..2000)");
+  BOTH_PRINTLN("  MSTEP:<n>  : M1+M2 microsteps (1/2/4/8/16/32/64/128/256)");
+  BOTH_PRINTLN("  TMCSTAT    : driver status");
+  BOTH_PRINTLN("--- All motors at once ---");
+  BOTH_PRINTLN("  S:<n>      : steps for all (100..500000)");
+  BOTH_PRINTLN("  T:<n>      : offset for all (-50000..50000)");
+  BOTH_PRINTLN("--- Parameters ---");
+  BOTH_PRINTLN("  SPD:<n>    : speed (100..8000)");
+  BOTH_PRINTLN("  ACC:<n>    : acceleration (50..3000)");
   BOTH_PRINTLN("  POS / LIM / RESET / i");
   for (int i = 0; i < NUM_MOTORS; i++)
     BOTH_PRINTF("  M%d: pos=%ld steps=%ld trim=%+ld [%s]\n",
@@ -626,7 +626,7 @@ void printHelp() {
 }
 
 // =====================
-// Обработка команд
+// Command handling
 // =====================
 String btBuf = "", usbBuf = "";
 
@@ -659,11 +659,11 @@ void processLine(const String &line) {
   }
   if (line.equalsIgnoreCase("MODE:SIM")) {
     seqMode = false; saveSettings();
-    BOTH_PRINTLN("MODE: SIM (одновременно)"); return;
+    BOTH_PRINTLN("MODE: SIM (simultaneous)"); return;
   }
   if (line.equalsIgnoreCase("MODE:SEQ")) {
     seqMode = true; saveSettings();
-    BOTH_PRINTLN("MODE: SEQ (по очереди, DOWN: M5→M1, UP: M1→M4)"); return;
+    BOTH_PRINTLN("MODE: SEQ (one by one, DOWN: M5→M1, UP: M1→M4)"); return;
   }
   if (line == "0") {
     hardStopAll(); sysState = STATE_IDLE; sysPosition = POS_UNKNOWN;
@@ -717,7 +717,7 @@ void processLine(const String &line) {
     String cmd = line.substring(3);
     if (cmd.equalsIgnoreCase("UP")) {
       if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
-      if (!upperMotorsUp(idx)) { BOTH_PRINTF("SAFETY: подними M1..M%d сначала\n", idx); return; }
+      if (!upperMotorsUp(idx)) { BOTH_PRINTF("SAFETY: raise M1..M%d first\n", idx); return; }
       adjMotorIdx = idx; adjDir = UP_DIR;
       motors[idx]->move(effectiveSteps(idx, UP_DIR)); sysState = STATE_ADJ;
       BOTH_PRINTF("M%d: UP\n", idx+1); return;
@@ -737,9 +737,9 @@ void processLine(const String &line) {
       if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
       long v = cmd.substring(4).toInt();
       if (v == 0) { BOTH_PRINTLN("ERR: ADJ=0"); return; }
-      // + = UP (поднять), - = DOWN (опустить)
+      // + = UP (raise), - = DOWN (lower)
       int  dir   = (v > 0) ? UP_DIR : DOWN_DIR;
-      long steps = abs(v) * dir;   // UP_DIR=-1: steps отрицательный (вверх)
+      long steps = abs(v) * dir;   // UP_DIR=-1: steps is negative (up)
       adjMotorIdx = idx; adjDir = dir;
       motors[idx]->move(steps); sysState = STATE_ADJ;
       BOTH_PRINTF("M%d: ADJ %+ld (%s)\n", idx+1, v, (v>0)?"UP":"DOWN"); return;
@@ -759,7 +759,7 @@ void processLine(const String &line) {
       BOTH_PRINTF("M%d: trim=%+ld\n", idx+1, v); return;
     }
   }
-  // S:<n>  — шаги для всех моторов
+  // S:<n>  — steps for all motors
   if (line.startsWith("S:") || line.startsWith("s:")) {
     if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
     long v = line.substring(2).toInt();
@@ -768,7 +768,7 @@ void processLine(const String &line) {
     saveSettings();
     BOTH_PRINTF("ALL steps=%ld\n", v); return;
   }
-  // T:<n>  — поправка для всех моторов
+  // T:<n>  — offset for all motors
   if (line.startsWith("T:") || line.startsWith("t:")) {
     if (sysState != STATE_IDLE) { BOTH_PRINTLN("BUSY"); return; }
     long v = line.substring(2).toInt();
@@ -777,7 +777,7 @@ void processLine(const String &line) {
     saveSettings();
     BOTH_PRINTF("ALL trim=%+ld\n", v); return;
   }
-  BOTH_PRINTF("UNKNOWN: '%s' (введи 'i')\n", line.c_str());
+  BOTH_PRINTF("UNKNOWN: '%s' (type 'i')\n", line.c_str());
 }
 
 void handleSerial() {
@@ -789,7 +789,7 @@ void handleSerial() {
       if (usbBuf.length() > 0) { String s = usbBuf; usbBuf = ""; processLine(s); }
     } else { usbBuf += c; if (usbBuf.length() > 64) usbBuf = ""; }
   }
-  // BT — читаем всегда, иначе STOP приходит только когда мотор уже сам остановился
+  // BT — always read, otherwise STOP only arrives after the motor has already stopped on its own
   while (SerialBT.available()) {
     char c = (char)SerialBT.read();
     if (c == '\n' || c == '\r') {
@@ -828,8 +828,8 @@ void handleEspNow() {
   }
   if (cmd == 1) { if (sysState == STATE_IDLE && sysPosition != POS_DOWN) startGoDown(); return; }
   if (cmd == 2) { if (sysState == STATE_IDLE && sysPosition != POS_UP)   startGoUp();   return; }
-  if (cmd == 3) { seqMode = true;  saveSettings(); BOTH_PRINTLN("MODE: SEQ (по очереди)");   return; }
-  if (cmd == 4) { seqMode = false; saveSettings(); BOTH_PRINTLN("MODE: SIM (одновременно)"); return; }
+  if (cmd == 3) { seqMode = true;  saveSettings(); BOTH_PRINTLN("MODE: SEQ (one by one)");   return; }
+  if (cmd == 4) { seqMode = false; saveSettings(); BOTH_PRINTLN("MODE: SIM (simultaneous)"); return; }
 }
 
 // =====================
@@ -862,23 +862,23 @@ void setup() {
   Serial.println("BT: Slave Motor 5");
 
   initEspNow();
-  Serial.println("READY. Команды: TEST, HOME, LIM, TMCSTAT, i");
+  Serial.println("READY. Commands: TEST, HOME, LIM, TMCSTAT, i");
 
-  // Автоматически опуститься вниз при включении
+  // Automatically move down on power-up
   startHoming();
 }
 
 void loop() {
-  // === Мгновенная остановка по концевику — до любых run() ===
+  // === Instant stop at limit switch — before any run() ===
   if (sysState == STATE_GOING_DOWN) {
     if (seqMode) {
-      // Последовательный: следим только за текущим мотором
+      // Sequential: watch only the current motor
       if (seqIndex >= 0 && motorPos[seqIndex] != POS_DOWN && limitTriggered(seqIndex)) {
         hardStop(seqIndex); motors[seqIndex]->setCurrentPosition(0);
         motorPos[seqIndex] = POS_DOWN;
       }
     } else {
-      // Одновременный: следим за всеми
+      // Simultaneous: watch all of them
       for (int i = 0; i < NUM_MOTORS; i++) {
         if (motorPos[i] != POS_DOWN && limitTriggered(i)) {
           hardStop(i); motors[i]->setCurrentPosition(0);
